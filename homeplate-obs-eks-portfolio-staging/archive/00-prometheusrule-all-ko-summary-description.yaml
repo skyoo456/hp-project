@@ -1,0 +1,2965 @@
+---
+# Source: hp-observability-rules/templates/layer1_infrastructure.yaml
+# =============================================================================
+# Layer 1 - Infrastructure
+# targets: apiserver, kubelet, coredns, node-exporter, kube-state-metrics, PVC/PV
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-infrastructure-rules
+  namespace: observability
+  labels:
+    release: kps
+    layer: infrastructure
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Node status
+    # =========================================================================
+    - name: infrastructure.node
+      rules:
+
+        - alert: NodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "노드 Ready 아님: {{ $labels.node }}"
+            description: "노드 {{ $labels.node }} 가 Ready 상태가 아닙니다. 해당 노드의 상태와 그 위에서 동작 중인 파드를 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: NodeCpuHighWarning
+          expr: |
+            (
+              1 - avg by (instance) (
+                rate(node_cpu_seconds_total{mode="idle"}[5m])
+              )
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: node-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "노드 CPU 경고: {{ $labels.instance }}"
+            description: "노드 {{ $labels.instance }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다. 경고 기준은 80%입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: NodeCpuHighCritical
+          expr: |
+            (
+              1 - avg by (instance) (
+                rate(node_cpu_seconds_total{mode="idle"}[5m])
+              )
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: node-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "노드 CPU 심각: {{ $labels.instance }}"
+            description: "노드 {{ $labels.instance }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: NodeMemoryHighWarning
+          expr: |
+            (
+              1 - (
+                node_memory_MemAvailable_bytes
+                / node_memory_MemTotal_bytes
+              )
+            ) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: node-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "노드 메모리 경고: {{ $labels.instance }}"
+            description: "노드 {{ $labels.instance }} 의 메모리 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: NodeMemoryHighCritical
+          expr: |
+            (
+              1 - (
+                node_memory_MemAvailable_bytes
+                / node_memory_MemTotal_bytes
+              )
+            ) > 0.95
+          for: 5m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: node-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "노드 메모리 심각: {{ $labels.instance }}"
+            description: "노드 {{ $labels.instance }} 의 메모리 사용률이 {{ $value | humanizePercentage }} 입니다. OOM 발생 가능성을 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        # [FIX] fstype  + mountpoint
+        - alert: NodeDiskHighWarning
+          expr: |
+            (
+              1 - (
+                node_filesystem_avail_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+                / node_filesystem_size_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+              )
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: node-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "노드 디스크 경고: {{ $labels.instance }} {{ $labels.mountpoint }}"
+            description: "노드 {{ $labels.instance }} 의 {{ $labels.mountpoint }} 마운트 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: NodeDiskHighCritical
+          expr: |
+            (
+              1 - (
+                node_filesystem_avail_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+                / node_filesystem_size_bytes{
+                  fstype!~"tmpfs|overlay|squashfs|fuse.*",
+                  mountpoint!~"/boot.*|/run.*|/dev.*"
+                }
+              )
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: node-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "노드 디스크 심각: {{ $labels.instance }} {{ $labels.mountpoint }}"
+            description: "노드 {{ $labels.instance }} 의 {{ $labels.mountpoint }} 마운트 사용률이 {{ $value | humanizePercentage }} 입니다. 디스크 부족 여부를 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 2.   /
+    # =========================================================================
+    - name: infrastructure.controlplane
+      rules:
+
+        # [FIX] node  instance  (kubelet scrape  )
+        - alert: KubeletDown
+          expr: up{job="kubelet"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kubelet
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Kubelet 다운: {{ $labels.instance }}"
+            description: "kubelet {{ $labels.instance }} 가 응답하지 않습니다. 해당 노드와 파드 상태를 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ApiserverDown
+          expr: up{job="apiserver"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: apiserver
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "API Server 다운"
+            description: "Kubernetes API Server 가 응답하지 않습니다. kubectl, ArgoCD, 컨트롤러 동작에 영향이 있을 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: CoreDNSDown
+          expr: up{job="coredns"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: coredns
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "CoreDNS 다운"
+            description: "CoreDNS 가 응답하지 않습니다. 클러스터 내부 DNS 해석에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        # observability  job Layer 4 PrometheusTargetDown
+        - alert: ScrapeTargetDown
+          expr: |
+            up{job!~"kps-prometheus|kps-alertmanager|kps-grafana|observability/.+|alloy-.+"} == 0
+          for: 3m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: scrape-target
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "스크레이프 타깃 다운: {{ $labels.job }}/{{ $labels.instance }}"
+            description: "Prometheus 가 {{ $labels.job }} / {{ $labels.instance }} 대상 스크레이프에 실패했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3. Pod / Workload status
+    # =========================================================================
+    - name: infrastructure.workload
+      rules:
+
+        - alert: PodNotReady
+          expr: |
+            max by (namespace, pod) (
+              kube_pod_status_ready{condition="true"} == 0
+            )
+            * on (namespace, pod) group_left()
+            (kube_pod_status_phase{phase="Running"} == 1)
+          for: 1m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "파드 Ready 아님: {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} 파드가 Running 상태이지만 Ready 가 아닙니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PodCrashLoopBackOff
+          expr: |
+            max by (namespace, pod, container) (
+              kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}
+            ) == 1
+          for: 1m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "CrashLoopBackOff: {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: "{{ $labels.namespace }}/{{ $labels.pod }} 의 {{ $labels.container }} 컨테이너가 CrashLoopBackOff 상태입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        # [FIX] spec_replicas   -
+        - alert: DeploymentReplicasMismatch
+          expr: |
+            kube_deployment_spec_replicas
+            != kube_deployment_status_replicas_available
+          for: 5m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Deployment 레플리카 불일치: {{ $labels.namespace }}/{{ $labels.deployment }}"
+            description: "{{ $labels.namespace }}/{{ $labels.deployment }} 의 가용 replicas 수가 원하는 replicas 수와 일치하지 않습니다. 현재 값: {{ $value }}"
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 4. PVC / PV
+    # =========================================================================
+    - name: infrastructure.storage
+      rules:
+
+        # [FIX] component: kubelet - kubelet_volume_stats_* metrics
+        - alert: PvcUsedHighWarning
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes
+              / kubelet_volume_stats_capacity_bytes
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kubelet
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PVC 사용량 경고: {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}"
+            description: "PVC {{ $labels.persistentvolumeclaim }} 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PvcUsedHighCritical
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes
+              / kubelet_volume_stats_capacity_bytes
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: infrastructure
+            component: kubelet
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PVC 사용량 심각: {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}"
+            description: "PVC {{ $labels.persistentvolumeclaim }} 사용률이 {{ $value | humanizePercentage }} 입니다. 용량 부족 여부를 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PvcPredictedFull
+          expr: |
+            predict_linear(kubelet_volume_stats_available_bytes[6h], 24 * 3600) < 0
+          for: 10m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kubelet
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PVC 가득 참 예측: {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}"
+            description: "PVC {{ $labels.persistentvolumeclaim }} 는 현재 증가 추세라면 24시간 이내에 가득 찰 것으로 예측됩니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PvNotBound
+          expr: kube_persistentvolume_status_phase{phase!="Bound"} == 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: infrastructure
+            component: kube-state-metrics
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PV 바인딩 안 됨: {{ $labels.persistentvolume }}"
+            description: "PersistentVolume {{ $labels.persistentvolume }} 이 Bound 상태가 아닙니다. 현재 상태: {{ $labels.phase }}"
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+---
+# Source: hp-observability-rules/templates/layer2_platform.yaml
+# =============================================================================
+# Layer 2 - Platform
+# targets: ALB(YACE), istio-ingress, istiod, aws-load-balancer-controller, yace
+#       keycloak: exporter not deployed  enabled: false
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-platform-rules
+  namespace: observability
+  labels:
+    release: kps
+    layer: platform
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. AWS Load Balancer Controller
+    # =========================================================================
+    - name: platform.lbc
+      rules:
+
+        - alert: AwsLoadBalancerControllerDown
+          expr: up{job="aws-load-balancer-controller-metrics"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: platform
+            component: aws-load-balancer-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "AWS Load Balancer Controller 다운"
+            description: "AWS Load Balancer Controller 가 응답하지 않습니다. Ingress 및 ALB 반영에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 2. ALB (YACE - aws_applicationelb_* metrics)
+    # =========================================================================
+    - name: platform.alb
+      rules:
+
+        - alert: AlbHigh5xxRateWarning
+          expr: |
+            (
+              rate(aws_applicationelb_httpcode_target_5_xx_count_sum[5m])
+              /
+              clamp_min(rate(aws_applicationelb_request_count_sum[5m]), 0.001)
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            layer: platform
+            component: alb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ALB 5xx 비율 경고: {{ $labels.dimension_LoadBalancer }}"
+            description: "ALB {{ $labels.dimension_LoadBalancer }} 의 5xx 비율이 {{ $value | humanizePercentage }} 입니다. 경고 기준은 1%입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AlbHigh5xxRateCritical
+          expr: |
+            (
+              rate(aws_applicationelb_httpcode_target_5_xx_count_sum[5m])
+              /
+              clamp_min(rate(aws_applicationelb_request_count_sum[5m]), 0.001)
+            ) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            layer: platform
+            component: alb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ALB 5xx 비율 심각: {{ $labels.dimension_LoadBalancer }}"
+            description: "ALB {{ $labels.dimension_LoadBalancer }} 의 5xx 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+        
+        - alert: AlbElb5xxRateWarning
+          expr: |
+            (
+              rate(aws_applicationelb_httpcode_elb_5_xx_count_sum[5m])
+              /
+              clamp_min(rate(aws_applicationelb_request_count_sum[5m]), 0.001)
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            layer: platform
+            component: alb
+            cluster: hp-eks
+            environment: prod
+            team: aiops 
+          annotations:
+            summary: "ALB ELB 5xx 비율 높음"
+            description: "ALB 자체 계층의 5xx 비율이 1%를 초과했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AlbHighLatencyWarning
+          expr: |
+            aws_applicationelb_target_response_time_p95 > 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: platform
+            component: alb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ALB 지연시간 경고: {{ $labels.dimension_LoadBalancer }}"
+            description: "ALB {{ $labels.dimension_LoadBalancer }} 의 p95 응답시간이 {{ $value | humanizeDuration }} 입니다. 경고 기준은 1초입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AlbHighLatencyCritical
+          expr: |
+            aws_applicationelb_target_response_time_p95 > 3
+          for: 3m
+          labels:
+            severity: critical
+            layer: platform
+            component: alb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ALB 지연시간 심각: {{ $labels.dimension_LoadBalancer }}"
+            description: "ALB {{ $labels.dimension_LoadBalancer }} 의 p95 응답시간이 {{ $value | humanizeDuration }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3. Istio Ingress Gateway
+    # =========================================================================
+    - name: platform.istio_ingress
+      rules:
+
+        - alert: IstioIngressDown
+          expr: up{job="istio-ingress-metrics"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: platform
+            component: istio-ingress
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Istio Ingress Gateway 다운"
+            description: "Istio Ingress Gateway 가 응답하지 않습니다. 외부 트래픽 유입에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: IngressHigh5xxRateWarning
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                source_workload="istio-ingressgateway",
+                source_workload_namespace="istio-system",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(
+                sum(rate(istio_requests_total{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])),
+                0.001
+              )
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            layer: platform
+            component: istio-ingress
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Ingress 5xx 비율 경고"
+            description: "Istio IngressGateway 의 5xx 비율이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: IngressHigh5xxRateCritical
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                source_workload="istio-ingressgateway",
+                source_workload_namespace="istio-system",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(
+                sum(rate(istio_requests_total{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])),
+                0.001
+              )
+            ) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            layer: platform
+            component: istio-ingress
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Ingress 5xx 비율 심각"
+            description: "Istio IngressGateway 의 5xx 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: IngressHighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])
+              )
+            ) / 1000 > 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: platform
+            component: istio-ingress
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Ingress p99 지연시간 경고"
+            description: "Istio IngressGateway 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: IngressHighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  source_workload="istio-ingressgateway",
+                  source_workload_namespace="istio-system"
+                }[5m])
+              )
+            ) / 1000 > 3
+          for: 3m
+          labels:
+            severity: critical
+            layer: platform
+            component: istio-ingress
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Ingress p99 지연시간 심각"
+            description: "Istio IngressGateway 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 4. Istiod (Control Plane)
+    # =========================================================================
+    - name: platform.istiod
+      rules:
+
+        - alert: IstiodDown
+          expr: up{job="istiod"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: platform
+            component: istiod
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Istiod 다운"
+            description: "Istiod(Istio Control Plane) 가 응답하지 않습니다. 사이드카 및 라우팅 제어에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 5. YACE (CloudWatch Exporter)
+    # =========================================================================
+    - name: platform.yace
+      rules:
+
+        # YACE down = RDS/ALB/ElastiCache CloudWatch metrics    critical
+        - alert: YaceDown
+          expr: up{job="yace-prometheus-yet-another-cloudwatch-exporter"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            layer: platform
+            component: yace
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "YACE(CloudWatch Exporter) 다운"
+            description: "YACE 가 응답하지 않습니다. RDS, ALB, ElastiCache CloudWatch 메트릭 수집에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 6. Keycloak - exporter not deployed,   enabled: true
+    # =========================================================================
+---
+# Source: hp-observability-rules/templates/layer3_delivery.yaml
+# =============================================================================
+# Layer 3 - Delivery
+# targets: Jenkins, SonarQube, ArgoCD (server/app-controller/repo-server/appset-controller)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-delivery-rules
+  namespace: observability
+  labels:
+    release: kps
+    layer: delivery
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Jenkins
+    # =========================================================================
+    - name: delivery.jenkins
+      rules:
+
+        - alert: JenkinsDown
+          expr: up{job="jenkins"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: delivery
+            component: jenkins
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Jenkins 다운"
+            description: "Jenkins 가 응답하지 않습니다. CI 파이프라인 실행에 영향이 있을 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: JenkinsBuildQueueHighWarning
+          expr: |
+            jenkins_queue_size_value > 10
+          for: 10m
+          labels:
+            severity: warning
+            layer: delivery
+            component: jenkins
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Jenkins 빌드 큐 높음: {{ $value }}"
+            description: "Jenkins 빌드 대기열이 {{ $value }} 건입니다. 경고 기준은 10건입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: JenkinsBuildQueueHighCritical
+          expr: |
+            jenkins_queue_size_value > 30
+          for: 5m
+          labels:
+            severity: critical
+            layer: delivery
+            component: jenkins
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Jenkins 빌드 큐 심각: {{ $value }}"
+            description: "Jenkins 빌드 대기열이 {{ $value }} 건입니다. executor 부족 여부를 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: JenkinsExecutorSaturationWarning
+          expr: |
+            (
+              jenkins_executor_in_use_value
+              / clamp_min(jenkins_executor_count_value, 1)
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            layer: delivery
+            component: jenkins
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Jenkins Executor 포화 경고: {{ $value | humanizePercentage }}"
+            description: "Jenkins executor 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: JenkinsExecutorSaturationCritical
+          expr: |
+            (
+              jenkins_executor_in_use_value
+              / clamp_min(jenkins_executor_count_value, 1)
+            ) > 0.95
+          for: 5m
+          labels:
+            severity: critical
+            layer: delivery
+            component: jenkins
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Jenkins Executor 포화 심각: {{ $value | humanizePercentage }}"
+            description: "Jenkins executor 사용률이 매우 높습니다. 빌드가 대기 상태로 밀릴 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 2. SonarQube
+    # =========================================================================
+    - name: delivery.sonarqube
+      rules:
+
+        - alert: SonarQubeDown
+          expr: up{job="sonarqube"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: delivery
+            component: sonarqube
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "SonarQube 다운"
+            description: "SonarQube 가 응답하지 않습니다. 코드 품질 분석에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: SonarQubeComputeEnginePending
+          expr: |
+            sonarqube_compute_engine_pending_tasks_total > 0
+          for: 15m
+          labels:
+            severity: warning
+            layer: delivery
+            component: sonarqube
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "SonarQube CE 대기 작업 수: {{ $value }}"
+            description: "SonarQube Compute Engine 에 대기 작업이 {{ $value }} 건 있습니다. 15분 이상 지속 중입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3. ArgoCD
+    # =========================================================================
+    - name: delivery.argocd
+      rules:
+
+        - alert: ArgoCDServerDown
+          expr: up{job="argocd-server-metrics"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-server
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD Server 다운"
+            description: "ArgoCD Server 가 응답하지 않습니다. UI 와 API 사용에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ArgoCDAppControllerDown
+          expr: up{job="argocd-application-controller-metrics"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD Application Controller 다운"
+            description: "ArgoCD Application Controller 가 응답하지 않습니다. 애플리케이션 동기화에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ArgoCDRepoServerDown
+          expr: up{job="argocd-repo-server-metrics"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-repo-server
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD Repo Server 다운"
+            description: "ArgoCD Repo Server 가 응답하지 않습니다. Git 저장소 조회에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ArgoCDAppSetControllerDown
+          expr: up{job="argocd-applicationset-controller-metrics"} == 0
+          for: 1m
+          labels:
+            severity: warning
+            layer: delivery
+            component: argocd-applicationset-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD ApplicationSet Controller 다운"
+            description: "ArgoCD ApplicationSet Controller 가 응답하지 않습니다. ApplicationSet 동기화에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ArgoCDAppNotSyncedWarning
+          expr: |
+            count(
+              argocd_app_info{sync_status!="Synced"}
+            ) > 1
+          for: 10m
+          labels:
+            severity: warning
+            layer: delivery
+            component: argocd-application-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD 앱 미동기화: {{ $value }}"
+            description: "Synced 상태가 아닌 ArgoCD 애플리케이션이 {{ $value }} 개 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ArgoCDAppNotSyncedCritical
+          expr: |
+            count(
+              argocd_app_info{sync_status!="Synced"}
+            ) > 3
+          for: 5m
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD 앱 미동기화 심각: {{ $value }}"
+            description: "Synced 상태가 아닌 ArgoCD 애플리케이션이 {{ $value }} 개 있습니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ArgoCDAppDegraded
+          expr: |
+            count(
+              argocd_app_info{health_status="Degraded"}
+            ) > 0
+          for: 3m
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD 앱 상태 저하: {{ $value }}"
+            description: "Degraded 상태인 ArgoCD 애플리케이션이 {{ $value }} 개 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: ArgoCDClusterDisconnected
+          expr: argocd_cluster_connection_status == 0
+          for: 3m
+          labels:
+            severity: critical
+            layer: delivery
+            component: argocd-application-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "ArgoCD 클러스터 연결 끊김: {{ $labels.server }}"
+            description: "ArgoCD 가 클러스터 {{ $labels.server }} 와 연결되지 않았습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+---
+# Source: hp-observability-rules/templates/layer4_observability.yaml
+# =============================================================================
+# Layer 4 - Observability
+# targets: Prometheus, Alertmanager, Grafana,
+#       Loki (write/read/backend/gateway),
+#       Tempo (distributor/ingester/querier/query-frontend/compactor),
+#       Alloy collector, Alloy logs
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-observability-rules
+  namespace: observability
+  labels:
+    release: kps
+    layer: observability
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Prometheus
+    # =========================================================================
+    - name: observability.prometheus
+      rules:
+
+        - alert: PrometheusDown
+          expr: up{job="kps-prometheus"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: prometheus
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Prometheus 다운"
+            description: "Prometheus 가 응답하지 않습니다. 메트릭 수집과 룰 평가에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        # ScrapeTargetDown(Layer1)  : observability  job
+        - alert: PrometheusTargetDownWarning
+          expr: |
+            count(
+              up{job=~"kps-prometheus|kps-alertmanager|kps-grafana|observability/.+|alloy-.+"} == 0
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: prometheus
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Observability 타깃 다운 경고: {{ $value }}"
+            description: "Observability 영역에서 스크레이프 실패 대상이 {{ $value }} 개 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PrometheusTargetDownCritical
+          expr: |
+            count(
+              up{job=~"kps-prometheus|kps-alertmanager|kps-grafana|observability/.+|alloy-.+"} == 0
+            ) > 5
+          for: 3m
+          labels:
+            severity: critical
+            layer: observability
+            component: prometheus
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Observability 타깃 다운 심각: {{ $value }}"
+            description: "Observability 영역에서 스크레이프 실패 대상이 {{ $value }} 개 있습니다. 장애 범위를 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PrometheusConfigReloadFailed
+          expr: prometheus_config_last_reload_successful == 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: prometheus
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Prometheus 설정 리로드 실패"
+            description: "Prometheus 설정 리로드에 실패했습니다. 최근 설정 변경을 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 2. Alertmanager
+    # =========================================================================
+    - name: observability.alertmanager
+      rules:
+
+        - alert: AlertmanagerDown
+          expr: up{job="kps-alertmanager"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: alertmanager
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Alertmanager 다운"
+            description: "Alertmanager 가 응답하지 않습니다. Slack 등 알림 전송에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AlertmanagerConfigReloadFailed
+          expr: alertmanager_config_last_reload_successful == 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: alertmanager
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Alertmanager 설정 리로드 실패"
+            description: "Alertmanager 설정 리로드에 실패했습니다. 최근 설정 변경을 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3. Grafana
+    # =========================================================================
+    - name: observability.grafana
+      rules:
+
+        - alert: GrafanaDown
+          expr: up{job="kps-grafana"} == 0
+          for: 1m
+          labels:
+            severity: warning
+            layer: observability
+            component: grafana
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Grafana 다운"
+            description: "Grafana 가 응답하지 않습니다. 대시보드 조회가 불가능할 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 4. Loki
+    # =========================================================================
+    - name: observability.loki
+      rules:
+
+        - alert: LokiWriteDown
+          expr: up{job="observability/loki-write"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-write
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Loki Write 다운"
+            description: "Loki Write 컴포넌트가 응답하지 않습니다. 로그 수집 및 적재에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: LokiReadDown
+          expr: up{job="observability/loki-read"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-read
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Loki Read 다운"
+            description: "Loki Read 컴포넌트가 응답하지 않습니다. Grafana 에서 로그 조회가 어려울 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: LokiBackendDown
+          expr: up{job="observability/loki-backend"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Loki Backend 다운"
+            description: "Loki Backend(Ruler/Compactor) 가 응답하지 않습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        # LokiGatewayDown  - job  (loki-canary/chunks-cache/results-cache  )
+
+        - alert: LokiHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(loki_request_duration_seconds_count[5m])), 0.001)
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: loki-write
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Loki 에러 비율 경고: {{ $value | humanizePercentage }}"
+            description: "Loki 에러 비율이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: LokiHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(loki_request_duration_seconds_count[5m])), 0.001)
+            ) > 0.1
+          for: 3m
+          labels:
+            severity: critical
+            layer: observability
+            component: loki-write
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Loki 에러 비율 심각: {{ $value | humanizePercentage }}"
+            description: "Loki 에러 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 5. Tempo
+    # =========================================================================
+    - name: observability.tempo
+      rules:
+
+        - alert: TempoDistributorDown
+          expr: up{job="observability/distributor"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-distributor
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Tempo Distributor 다운"
+            description: "Tempo Distributor 가 응답하지 않습니다. 트레이스 수집에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: TempoIngesterDown
+          expr: up{job="observability/ingester"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-ingester
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Tempo Ingester 다운"
+            description: "Tempo Ingester 가 응답하지 않습니다. 트레이스 저장에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: TempoQuerierDown
+          expr: up{job="observability/querier"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-querier
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Tempo Querier 다운"
+            description: "Tempo Querier 가 응답하지 않습니다. Grafana 에서 트레이스 조회가 어려울 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: TempoQueryFrontendDown
+          expr: up{job="observability/query-frontend"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-query-frontend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Tempo Query Frontend 다운"
+            description: "Tempo Query Frontend 가 응답하지 않습니다. 트레이스 조회 성능에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: TempoCompactorDown
+          expr: up{job="observability/compactor"} == 0
+          for: 3m
+          labels:
+            severity: warning
+            layer: observability
+            component: tempo-compactor
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Tempo Compactor 다운"
+            description: "Tempo Compactor 가 응답하지 않습니다. 블록 정리 및 보존 주기에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: TempoHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(tempo_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(tempo_request_duration_seconds_count[5m])), 0.001)
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: tempo-distributor
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Tempo 에러 비율 경고: {{ $value | humanizePercentage }}"
+            description: "Tempo 에러 비율이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: TempoHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(tempo_request_duration_seconds_count{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(tempo_request_duration_seconds_count[5m])), 0.001)
+            ) > 0.1
+          for: 3m
+          labels:
+            severity: critical
+            layer: observability
+            component: tempo-distributor
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Tempo 에러 비율 심각: {{ $value | humanizePercentage }}"
+            description: "Tempo 에러 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 6. Alloy
+    # =========================================================================
+    - name: observability.alloy
+      rules:
+
+        - alert: AlloyCollectorDown
+          expr: up{job="alloy-collector"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: alloy-collector
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Alloy Collector 다운"
+            description: "Alloy Collector 가 응답하지 않습니다. RUM 및 OTLP 수집에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AlloyLogsDown
+          expr: up{job="alloy-logs"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: observability
+            component: alloy-logs
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Alloy Logs 다운: {{ $labels.instance }}"
+            description: "Alloy Logs DaemonSet {{ $labels.instance }} 가 응답하지 않습니다. 해당 노드의 로그 수집 상태를 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AlloyConfigLoadFailed
+          expr: alloy_config_last_load_successful == 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: observability
+            component: alloy-collector
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Alloy 설정 로드 실패: {{ $labels.instance }}"
+            description: "Alloy {{ $labels.instance }} 설정 로드에 실패했습니다. 최근 설정 변경을 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+---
+# Source: hp-observability-rules/templates/layer5_data.yaml
+# =============================================================================
+# Layer 5 - Data
+# targets: RDS MariaDB (mysqld-exporter), ElastiCache Redis (redis-exporter),
+#       RDS CloudWatch (YACE: aws_rds_*)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-data-rules
+  namespace: observability
+  labels:
+    release: kps
+    layer: data
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. mysqld-exporter status
+    # =========================================================================
+    - name: data.mysqld_exporter
+      rules:
+
+        - alert: MysqldExporterDown
+          expr: up{job=~"mysqld-exporter.*"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: data
+            component: mysqld-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "mysqld-exporter 다운: {{ $labels.job }}"
+            description: "{{ $labels.job }} mysqld-exporter 가 응답하지 않습니다. MariaDB 메트릭 수집에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 2. MariaDB (mysqld-exporter metrics)
+    # =========================================================================
+    - name: data.mariadb
+      rules:
+
+        - alert: MariaDBConnectionHighWarning
+          expr: |
+            (
+              mysql_global_status_threads_connected
+              / mysql_global_variables_max_connections
+            ) > 0.7
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "MariaDB 연결 수 높음 경고: {{ $labels.instance }}"
+            description: "{{ $labels.instance }} 의 연결 사용률이 {{ $value | humanizePercentage }} 입니다. max_connections 대비 70%를 초과했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: MariaDBConnectionHighCritical
+          expr: |
+            (
+              mysql_global_status_threads_connected
+              / mysql_global_variables_max_connections
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "MariaDB 연결 수 높음 심각: {{ $labels.instance }}"
+            description: "{{ $labels.instance }} 의 연결 사용률이 {{ $value | humanizePercentage }} 입니다. 연결 포화 여부를 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: MariaDBReplicaIOStopped
+          expr: |
+            mysql_slave_status_replica_io_running == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "MariaDB 복제 IO 스레드 중지: {{ $labels.instance }}"
+            description: "{{ $labels.instance }} 의 Replica IO Thread 가 중지되었습니다. 마스터 binlog 수신 여부를 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: MariaDBReplicaSQLStopped
+          expr: |
+            mysql_slave_status_replica_sql_running == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "MariaDB 복제 SQL 스레드 중지: {{ $labels.instance }}"
+            description: "{{ $labels.instance }} 의 Replica SQL Thread 가 중지되었습니다. 복제 적용 상태를 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: MariaDBReplicaLagWarning
+          expr: |
+            mysql_slave_status_seconds_behind_source
+            > 10
+          for: 5m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "MariaDB 복제 지연 경고: {{ $labels.instance }}"
+            description: "{{ $labels.instance }} 의 Replica Lag 가 {{ $value }} 초입니다. 경고 기준은 10초입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: MariaDBReplicaLagCritical
+          expr: |
+            mysql_slave_status_seconds_behind_source
+            > 30
+          for: 3m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "MariaDB 복제 지연 심각: {{ $labels.instance }}"
+            description: "{{ $labels.instance }} 의 Replica Lag 가 {{ $value }} 초입니다. 복제 지연 원인을 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3-A. RDS CloudWatch - MariaDB (hp-rds-master, hp-rds-replica)
+    # =========================================================================
+    - name: data.rds_mariadb
+      rules:
+
+        - alert: RdsMariaDBCpuHighWarning
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier=~"hp-rds-master|hp-rds-replica"
+            } / 100
+            > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS MariaDB CPU 경고: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsMariaDBCpuHighCritical
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier=~"hp-rds-master|hp-rds-replica"
+            } / 100
+            > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS MariaDB CPU 심각: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsMariaDBFreeStorageLowWarning
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier=~"hp-rds-master|hp-rds-replica"
+            } < 5.36870912e+09
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS MariaDB 여유 스토리지 경고: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 남은 스토리지가 {{ $value | humanize1024 }}B 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsMariaDBFreeStorageLowCritical
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier=~"hp-rds-master|hp-rds-replica"
+            } < 1.073741824e+09
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-mariadb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS MariaDB 여유 스토리지 심각: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 남은 스토리지가 {{ $value | humanize1024 }}B 입니다. 용량 부족 여부를 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3-B. RDS CloudWatch - aiops PostgreSQL (aiops-postgres)
+    # =========================================================================
+    - name: data.rds_postgresql_aiops
+      rules:
+
+        - alert: RdsAiopsPostgreSQLCpuHighWarning
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="aiops-postgres"
+            } / 100
+            > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS aiops-postgres CPU 경고: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsAiopsPostgreSQLCpuHighCritical
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="aiops-postgres"
+            } / 100
+            > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS aiops-postgres CPU 심각: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsAiopsPostgreSQLFreeStorageLowWarning
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="aiops-postgres"
+            } < 5.36870912e+09
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS aiops-postgres 여유 스토리지 경고: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 남은 스토리지가 {{ $value | humanize1024 }}B 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsAiopsPostgreSQLFreeStorageLowCritical
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="aiops-postgres"
+            } < 1.073741824e+09
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-aiops
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS aiops-postgres 여유 스토리지 심각: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 남은 스토리지가 {{ $value | humanize1024 }}B 입니다. 용량 부족 여부를 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3-C. RDS CloudWatch - Keycloak PostgreSQL (keycloak-db-prod)
+    # =========================================================================
+    - name: data.rds_postgresql_keycloak
+      rules:
+
+        - alert: RdsKeycloakPostgreSQLCpuHighWarning
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="keycloak-db-prod"
+            } / 100
+            > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS keycloak-db-prod CPU 경고: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsKeycloakPostgreSQLCpuHighCritical
+          expr: |
+            aws_rds_cpuutilization_average{
+              dimension_DBInstanceIdentifier="keycloak-db-prod"
+            } / 100
+            > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS keycloak-db-prod CPU 심각: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 CPU 사용률이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsKeycloakPostgreSQLFreeStorageLowWarning
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="keycloak-db-prod"
+            } < 5.36870912e+09
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS keycloak-db-prod 여유 스토리지 경고: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 남은 스토리지가 {{ $value | humanize1024 }}B 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RdsKeycloakPostgreSQLFreeStorageLowCritical
+          expr: |
+            aws_rds_free_storage_space_minimum{
+              dimension_DBInstanceIdentifier="keycloak-db-prod"
+            } < 1.073741824e+09
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql-keycloak
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "RDS keycloak-db-prod 여유 스토리지 심각: {{ $labels.dimension_DBInstanceIdentifier }}"
+            description: "RDS {{ $labels.dimension_DBInstanceIdentifier }} 의 남은 스토리지가 {{ $value | humanize1024 }}B 입니다. 용량 부족 여부를 즉시 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 4. redis-exporter status
+    # =========================================================================
+    - name: data.redis_exporter
+      rules:
+
+        - alert: RedisExporterDown
+          expr: up{job="redis-exporter"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: data
+            component: redis-exporter
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Redis Exporter 다운"
+            description: "redis-exporter 가 응답하지 않습니다. ElastiCache Redis 메트릭 수집에 문제가 생길 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 5. ElastiCache Redis (redis-exporter + YACE)
+    # =========================================================================
+    - name: data.redis
+      rules:
+
+        - alert: RedisMemoryHighWarning
+          expr: |
+            (
+              redis_memory_used_bytes
+              / redis_memory_max_bytes
+            ) > 0.75
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: elasticache-redis
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Redis 메모리 경고: {{ $labels.instance }}"
+            description: "Redis {{ $labels.instance }} 의 메모리 사용률이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RedisMemoryHighCritical
+          expr: |
+            (
+              redis_memory_used_bytes
+              / redis_memory_max_bytes
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: elasticache-redis
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Redis 메모리 심각: {{ $labels.instance }}"
+            description: "Redis {{ $labels.instance }} 의 메모리 사용률이 {{ $value | humanizePercentage }} 입니다. OOM 또는 eviction 여부를 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: RedisLowHitRatio
+          expr: |
+            (
+              rate(redis_keyspace_hits_total[5m])
+              /
+              clamp_min(
+                rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]),
+                0.001
+              )
+            ) < 0.4
+          for: 15m
+          labels:
+            severity: warning
+            layer: data
+            component: elasticache-redis
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Redis 히트 비율 낮음: {{ $labels.instance }}"
+            description: "Redis {{ $labels.instance }} 의 hit ratio 가 {{ $value | humanizePercentage }} 입니다. 기준은 40%입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 6. MongoDB - exporter deployed, enabled: true
+    # =========================================================================
+    - name: data.mongodb
+      rules:
+
+        - alert: MongoDBDown
+          expr: mongodb_up == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: data
+            component: mongodb
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "MongoDB 다운: {{ $labels.instance }}"
+            description: "MongoDB 가 응답하지 않습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 7. Kafka/Strimzi - exporter deployed, enabled: true
+    # =========================================================================
+    - name: data.kafka
+      rules:
+
+        - alert: KafkaBrokerTargetDown
+          expr: |
+            absent(up{job="observability/kafka-broker"})
+            or
+            min by (job) (up{job="observability/kafka-broker"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+            layer: data
+            component: kafka-broker
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Kafka broker 타깃 다운"
+            description: "Kafka broker 스크레이프 대상이 없거나 메트릭 수집에 실패했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: KafkaControllerTargetDown
+          expr: |
+            absent(up{job="observability/kafka-controller"})
+            or
+            min by (job) (up{job="observability/kafka-controller"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+            layer: data
+            component: kafka-controller
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Kafka controller 타깃 다운"
+            description: "Kafka controller 스크레이프 대상이 없거나 메트릭 수집에 실패했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: KafkaNetworkProcessorIdleLowWarning
+          expr: |
+            min by (instance) (
+              kafka_network_socketserver_networkprocessoravgidlepercent
+            ) < 0.30
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: kafka
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Kafka network processor idle 낮음"
+            description: "Kafka {{ $labels.instance }} 의 network processor idle 비율이 30% 미만입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: KafkaNetworkProcessorIdleLowCritical
+          expr: |
+            min by (instance) (
+              kafka_network_socketserver_networkprocessoravgidlepercent
+            ) < 0.10
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: kafka
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Kafka network processor idle 심각"
+            description: "Kafka {{ $labels.instance }} 의 network processor idle 비율이 10% 미만입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: KafkaDelayedOperationsHigh
+          expr: |
+            sum by (instance) (
+              kafka_server_delayedoperationpurgatory_numdelayedoperations_delayedoperation_fetch
+              +
+              kafka_server_delayedoperationpurgatory_numdelayedoperations_delayedoperation_produce
+            ) > 100
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: kafka
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Kafka 지연 작업 수 높음"
+            description: "Kafka {{ $labels.instance }} 의 delayed operations 수가 100을 초과했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 8. PostgreSQL
+    # =========================================================================
+    - name: data.postgresql
+      rules:
+
+        - alert: PostgreSQLDown
+          expr: |
+            pg_up == 0
+          for: 2m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PostgreSQL 다운: {{ $labels.instance }}"
+            description: "PostgreSQL exporter 가 데이터베이스에 연결하지 못하고 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PostgreSQLExporterScrapeError
+          expr: |
+            pg_exporter_last_scrape_error > 0
+          for: 5m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PostgreSQL exporter 스크레이프 에러: {{ $labels.instance }}"
+            description: "postgres_exporter 스크레이프에 실패하고 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PostgreSQLConnectionsHigh
+          expr: |
+            (
+              sum by (instance) (pg_stat_activity_count)
+              /
+              max by (instance) (pg_settings_max_connections)
+            ) > 0.80
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PostgreSQL 연결 수 높음: {{ $labels.instance }}"
+            description: "PostgreSQL 연결 사용률이 80%를 초과했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PostgreSQLConnectionsCritical
+          expr: |
+            (
+              sum by (instance) (pg_stat_activity_count)
+              /
+              max by (instance) (pg_settings_max_connections)
+            ) > 0.90
+          for: 5m
+          labels:
+            severity: critical
+            layer: data
+            component: rds-postgresql
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PostgreSQL 연결 수 심각: {{ $labels.instance }}"
+            description: "PostgreSQL 연결 사용률이 90%를 초과했습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: PostgreSQLLongTransaction
+          expr: |
+            max by (instance) (pg_stat_activity_max_tx_duration) > 300
+          for: 10m
+          labels:
+            severity: warning
+            layer: data
+            component: rds-postgresql
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "PostgreSQL 장기 트랜잭션: {{ $labels.instance }}"
+            description: "PostgreSQL 에서 300초를 초과한 장기 트랜잭션이 존재합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+---
+# Source: hp-observability-rules/templates/layer6_application.yaml
+# =============================================================================
+# Layer 6 - Application
+# targets: hp-frontend, hp-backend, hp-workers(not deployed), aiops-backend
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-application-rules
+  namespace: observability
+  labels:
+    release: kps
+    layer: application
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. hp-frontend
+    # =========================================================================
+
+    # =========================================================================
+    # GROUP 2. hp-backend-* (core / booking / queue / worker)
+    # =========================================================================
+    - name: application.hp_backend_booking
+      rules:
+
+        - alert: HpBackendBookingNotReady
+          expr: |
+            sum(kube_pod_status_ready{namespace="hp-core",condition="true",pod=~"hp-backend-booking-.*"}) < 1
+          for: 5m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-booking
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-booking 준비된 파드 없음"
+            description: "hp-backend-booking 의 Ready 파드 수가 0입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendBookingPodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="hp-core",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="hp-backend-booking"
+              }
+            ) == 1
+          for: 1m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-booking
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-booking CrashLoopBackOff: {{ $labels.pod }}"
+            description: "hp-backend-booking 파드 {{ $labels.pod }} 가 CrashLoopBackOff 상태입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendBookingHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-booking",
+                destination_service_namespace="hp-core",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-booking",
+                destination_service_namespace="hp-core"
+              }[5m])), 0.001)
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: hp-backend-booking
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-booking 에러 비율 경고: {{ $value | humanizePercentage }}"
+            description: "hp-backend-booking 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendBookingHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-booking",
+                destination_service_namespace="hp-core",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-booking",
+                destination_service_namespace="hp-core"
+              }[5m])), 0.001)
+            ) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-booking
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-booking 에러 비율 심각: {{ $value | humanizePercentage }}"
+            description: "hp-backend-booking 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendBookingHighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="hp-backend-booking",
+                  destination_service_namespace="hp-core"
+                }[5m])
+              )
+            ) / 1000 > 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: hp-backend-booking
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-booking p99 지연시간 경고: {{ $value | humanizeDuration }}"
+            description: "hp-backend-booking 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendBookingHighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="hp-backend-booking",
+                  destination_service_namespace="hp-core"
+                }[5m])
+              )
+            ) / 1000 > 3
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-booking
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-booking p99 지연시간 심각: {{ $value | humanizeDuration }}"
+            description: "hp-backend-booking 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+    - name: application.hp_backend_core
+      rules:
+
+        - alert: HpBackendCoreNotReady
+          expr: |
+            sum(kube_pod_status_ready{namespace="hp-core",condition="true",pod=~"hp-backend-core-.*"}) < 1
+          for: 5m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-core
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-core 준비된 파드 없음"
+            description: "hp-backend-core 의 Ready 파드 수가 0입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendCorePodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="hp-core",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="hp-backend-core"
+              }
+            ) == 1
+          for: 1m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-core
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-core CrashLoopBackOff: {{ $labels.pod }}"
+            description: "hp-backend-core 파드 {{ $labels.pod }} 가 CrashLoopBackOff 상태입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendCoreHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-core",
+                destination_service_namespace="hp-core",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-core",
+                destination_service_namespace="hp-core"
+              }[5m])), 0.001)
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: hp-backend-core
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-core 에러 비율 경고: {{ $value | humanizePercentage }}"
+            description: "hp-backend-core 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendCoreHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-core",
+                destination_service_namespace="hp-core",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-core",
+                destination_service_namespace="hp-core"
+              }[5m])), 0.001)
+            ) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-core
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-core 에러 비율 심각: {{ $value | humanizePercentage }}"
+            description: "hp-backend-core 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendCoreHighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="hp-backend-core",
+                  destination_service_namespace="hp-core"
+                }[5m])
+              )
+            ) / 1000 > 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: hp-backend-core
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-core p99 지연시간 경고: {{ $value | humanizeDuration }}"
+            description: "hp-backend-core 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendCoreHighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="hp-backend-core",
+                  destination_service_namespace="hp-core"
+                }[5m])
+              )
+            ) / 1000 > 3
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-core
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-core p99 지연시간 심각: {{ $value | humanizeDuration }}"
+            description: "hp-backend-core 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+    - name: application.hp_backend_queue
+      rules:
+
+        - alert: HpBackendQueueNotReady
+          expr: |
+            sum(kube_pod_status_ready{namespace="hp-core",condition="true",pod=~"hp-backend-queue-.*"}) < 1
+          for: 5m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-queue
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-queue 준비된 파드 없음"
+            description: "hp-backend-queue 의 Ready 파드 수가 0입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendQueuePodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="hp-core",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="hp-backend-queue"
+              }
+            ) == 1
+          for: 1m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-queue
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-queue CrashLoopBackOff: {{ $labels.pod }}"
+            description: "hp-backend-queue 파드 {{ $labels.pod }} 가 CrashLoopBackOff 상태입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendQueueHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-queue",
+                destination_service_namespace="hp-core",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-queue",
+                destination_service_namespace="hp-core"
+              }[5m])), 0.001)
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: hp-backend-queue
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-queue 에러 비율 경고: {{ $value | humanizePercentage }}"
+            description: "hp-backend-queue 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendQueueHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-queue",
+                destination_service_namespace="hp-core",
+                response_code=~"5.."
+              }[5m]))
+              /
+              clamp_min(sum(rate(istio_requests_total{
+                destination_service_name="hp-backend-queue",
+                destination_service_namespace="hp-core"
+              }[5m])), 0.001)
+            ) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-queue
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-queue 에러 비율 심각: {{ $value | humanizePercentage }}"
+            description: "hp-backend-queue 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendQueueHighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="hp-backend-queue",
+                  destination_service_namespace="hp-core"
+                }[5m])
+              )
+            ) / 1000 > 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: hp-backend-queue
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-queue p99 지연시간 경고: {{ $value | humanizeDuration }}"
+            description: "hp-backend-queue 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendQueueHighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(istio_request_duration_milliseconds_bucket{
+                  destination_service_name="hp-backend-queue",
+                  destination_service_namespace="hp-core"
+                }[5m])
+              )
+            ) / 1000 > 3
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-queue
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-queue p99 지연시간 심각: {{ $value | humanizeDuration }}"
+            description: "hp-backend-queue 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 2-B. hp-backend-worker
+    # =========================================================================
+    - name: application.hp_backend_worker
+      rules:
+
+        - alert: HpBackendWorkerNotReady
+          expr: |
+            (
+              kube_deployment_spec_replicas{
+                namespace="hp-core",
+                deployment="hp-backend-worker"
+              }
+              != kube_deployment_status_replicas_available{
+                namespace="hp-core",
+                deployment="hp-backend-worker"
+              }
+            )
+          for: 1m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-worker
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-worker Ready 아님"
+            description: "hp-backend-worker 의 가용 replicas 수가 원하는 replicas 수와 일치하지 않습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: HpBackendWorkerPodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="hp-core",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="hp-backend-worker"
+              }
+            ) == 1
+          for: 1m
+          labels:
+            severity: critical
+            layer: application
+            component: hp-backend-worker
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "hp-backend-worker CrashLoopBackOff: {{ $labels.pod }}"
+            description: "hp-backend-worker 파드 {{ $labels.pod }} 가 CrashLoopBackOff 상태입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+    # =========================================================================
+    # GROUP 3. hp-workers - metrics , enabled: true
+    # =========================================================================
+
+    # =========================================================================
+    # GROUP 4. aiops-backend
+    # =========================================================================
+    - name: application.aiops_backend
+      rules:
+
+        - alert: AiopsBackendNotReady
+          expr: |
+            (
+              kube_deployment_spec_replicas{
+                namespace="aiops",
+                deployment="aiops-backend"
+              }
+              != kube_deployment_status_replicas_available{
+                namespace="aiops",
+                deployment="aiops-backend"
+              }
+            )
+          for: 1m
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "aiops-backend Ready 아님"
+            description: "aiops-backend 의 가용 replicas 수가 원하는 replicas 수와 일치하지 않습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AiopsBackendPodCrashLoop
+          expr: |
+            max by (pod, container) (
+              kube_pod_container_status_waiting_reason{
+                namespace="aiops",
+                reason="CrashLoopBackOff"
+              }
+              * on(namespace, pod) group_left(label_app)
+              kube_pod_labels{
+                label_app="aiops-backend"
+              }
+            ) == 1
+          for: 1m
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "aiops-backend CrashLoopBackOff: {{ $labels.pod }}"
+            description: "aiops-backend 파드 {{ $labels.pod }} 가 CrashLoopBackOff 상태입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AiopsBackendHighErrorRateWarning
+          expr: |
+            (
+              sum(rate(aiops_requests_total{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(aiops_requests_total[5m])), 0.001)
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: aiops-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "aiops-backend 에러 비율 경고: {{ $value | humanizePercentage }}"
+            description: "aiops-backend 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AiopsBackendHighErrorRateCritical
+          expr: |
+            (
+              sum(rate(aiops_requests_total{status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(aiops_requests_total[5m])), 0.001)
+            ) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "aiops-backend 에러 비율 심각: {{ $value | humanizePercentage }}"
+            description: "aiops-backend 의 5xx 에러 비율이 {{ $value | humanizePercentage }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AiopsBackendHighLatencyWarning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(aiops_request_duration_seconds_bucket[5m])
+              )
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+            layer: application
+            component: aiops-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "aiops-backend p99 지연시간 경고: {{ $value | humanizeDuration }}"
+            description: "aiops-backend 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AiopsBackendHighLatencyCritical
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (
+                rate(aiops_request_duration_seconds_bucket[5m])
+              )
+            ) > 3
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "aiops-backend p99 지연시간 심각: {{ $value | humanizeDuration }}"
+            description: "aiops-backend 의 p99 지연시간이 {{ $value | humanizeDuration }} 입니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: AiopsDbPoolExhausted
+          expr: |
+            (
+             rate(aiops_requests_total[5m]) > 0
+            )
+            and
+            (
+            aiops_db_pool_free == 0
+            )
+          for: 3m
+          labels:
+            severity: critical
+            layer: application
+            component: aiops-backend
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "aiops-backend DB 풀 고갈"
+            description: "aiops-backend 의 DB 커넥션 풀이 고갈되었습니다. DB 대기 또는 요청 실패가 발생할 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+---
+# Source: hp-observability-rules/templates/layer7_ux.yaml
+# =============================================================================
+# Layer 7 - UX
+# Targets: Faro RUM (hp-frontend Web Vitals / user experience)
+# Metrics: faro_receiver_* (Alloy Collector faro.receiver)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: layer-ux-rules
+  namespace: observability
+  labels:
+    release: kps
+    layer: ux
+spec:
+  groups:
+
+    # =========================================================================
+    # GROUP 1. Faro Receiver status
+    # =========================================================================
+    - name: ux.faro
+      rules:
+
+        - alert: FaroReceiverStalled
+          expr: |
+            (
+              sum(increase(faro_receiver_events_total[30m])) > 30
+            )
+            and
+            (
+              sum(increase(faro_receiver_events_total[5m])) == 0
+            )
+          for: 3m
+          labels:
+            severity: warning
+            layer: ux
+            component: faro-rum
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Faro Receiver 정체"
+            description: "최근 30분 동안 Faro RUM 이벤트가 유입되다가 최근 5분 동안 수신이 끊겼습니다. Alloy Collector, ingress 경로, 프론트엔드 RUM SDK 전송을 확인하세요."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: FaroExceptionRateHighWarning
+          expr: |
+            (
+              sum(rate(faro_receiver_exceptions_total[5m]))
+              /
+              clamp_min(sum(rate(faro_receiver_events_total[5m])), 0.001)
+            ) > 0.05
+            and
+            sum(rate(faro_receiver_events_total[5m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            layer: ux
+            component: faro-rum
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Faro 예외 비율 경고: {{ $value | humanizePercentage }}"
+            description: "RUM 트래픽이 있는 상태에서 프론트엔드 JavaScript 예외 비율이 높습니다. 사용자 측 오류가 증가하고 있을 수 있습니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site
+
+        - alert: FaroExceptionRateHighCritical
+          expr: |
+            (
+              sum(rate(faro_receiver_exceptions_total[5m]))
+              /
+              clamp_min(sum(rate(faro_receiver_events_total[5m])), 0.001)
+            ) > 0.1
+            and
+            sum(rate(faro_receiver_events_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            layer: ux
+            component: faro-rum
+            cluster: hp-eks
+            environment: prod
+            team: aiops
+          annotations:
+            summary: "Faro 예외 비율 심각: {{ $value | humanizePercentage }}"
+            description: "RUM 트래픽이 있는 상태에서 프론트엔드 JavaScript 예외 비율이 매우 높습니다. 즉시 확인이 필요합니다."
+            runbook_url: https://www.notion.so/Runbook-31055a0c436c80ecb09bf471dcf63c59
+            dashboard_url: https://grafana.homeplate.site

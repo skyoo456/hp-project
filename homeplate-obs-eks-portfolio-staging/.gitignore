@@ -1,0 +1,37 @@
+# secrets
+.local/
+kustomize/overlays/*/*.env
+*.pem
+*.key
+*.crt
+*.p12
+
+# Local-only / generated (tracked examples use *.example.*)
+/alertmanager-webhooks.json
+aiops/01-aiops-backend-secret.yaml
+/alloy-logs-ds.yaml
+/lokitest.txt
+*.rendered.yaml
+*.dump.yaml
+
+# allow example files
+!kustomize/overlays/*/*.example.env
+!**/*.example.json
+!**/*.example.yaml
+
+# archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# misc
+*.bak
+*.tmp
+*.swp

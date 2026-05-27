@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aiops-frontend-auth
+  namespace: aiops
+type: Opaque
+stringData:
+  AUTH_SECRET: "<your-auth-secret>"
+  KEYCLOAK_CLIENT_SECRET: "<your-keycloak-client-secret>"

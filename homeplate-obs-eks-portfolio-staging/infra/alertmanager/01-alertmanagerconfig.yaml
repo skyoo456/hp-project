@@ -1,0 +1,112 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: hp-alert-routing
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  route:
+    receiver: warning-both
+    groupBy:
+      - cluster
+      - namespace
+      - alertname
+      - severity
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 2h
+    routes:
+      - receiver: warning-both
+        matchers:
+          - name: layer
+            matchType: "=~"
+            value: ".+"
+        groupBy:
+          - cluster
+          - environment
+          - layer
+          - component
+          - severity
+        groupWait: 30s
+        groupInterval: 5m
+        repeatInterval: 2h
+        routes:
+          - receiver: critical-both
+            matchers:
+              - name: severity
+                matchType: "="
+                value: critical
+          - receiver: warning-both
+            matchers:
+              - name: severity
+                matchType: "="
+                value: warning
+
+      - receiver: critical-both
+        matchers:
+          - name: severity
+            matchType: "="
+            value: critical
+
+      - receiver: warning-both
+        matchers:
+          - name: severity
+            matchType: "="
+            value: warning
+
+  inhibitRules:
+    - sourceMatch:
+        - name: severity
+          matchType: "="
+          value: critical
+      targetMatch:
+        - name: severity
+          matchType: "="
+          value: warning
+      equal:
+        - cluster
+        - environment
+        - layer
+        - component
+
+  receivers:
+    - name: critical-both
+      slackConfigs:
+        - apiURL:
+            name: alertmanager-webhooks
+            key: slack_critical_url
+          sendResolved: true
+          color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+          title: '[{{ .Status | toUpper }}][CRITICAL] {{ .CommonLabels.component }} - {{ .CommonLabels.alertname }}'
+          text: |-
+            *Cluster:* {{ .CommonLabels.cluster }}
+            *Environment:* {{ .CommonLabels.environment }}
+            *Layer:* {{ .CommonLabels.layer }}
+            *Component:* {{ .CommonLabels.component }}
+            *Summary:* {{ .CommonAnnotations.summary }}
+            *Description:* {{ .CommonAnnotations.description }}
+            📋 <{{ .CommonAnnotations.runbook_url }}|Runbook>  |  📊 <{{ .CommonAnnotations.dashboard_url }}|Dashboard>  |  🤖 <https://aiops.homeplate.site|AIOps>
+      webhookConfigs:
+        - url: 'http://aiops-backend.aiops.svc.cluster.local:8000/webhook/alertmanager'
+          sendResolved: true
+
+    - name: warning-both
+      slackConfigs:
+        - apiURL:
+            name: alertmanager-webhooks
+            key: slack_warning_url
+          sendResolved: true
+          color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+          title: '[{{ .Status | toUpper }}][WARNING] {{ .CommonLabels.component }} - {{ .CommonLabels.alertname }}'
+          text: |-
+            *Cluster:* {{ .CommonLabels.cluster }}
+            *Environment:* {{ .CommonLabels.environment }}
+            *Layer:* {{ .CommonLabels.layer }}
+            *Component:* {{ .CommonLabels.component }}
+            *Summary:* {{ .CommonAnnotations.summary }}
+            *Description:* {{ .CommonAnnotations.description }}
+            📋 <{{ .CommonAnnotations.runbook_url }}|Runbook>  |  📊 <{{ .CommonAnnotations.dashboard_url }}|Dashboard>  |  🤖 <https://aiops.homeplate.site|AIOps>
+      webhookConfigs:
+        - url: 'http://aiops-backend.aiops.svc.cluster.local:8000/webhook/alertmanager'
+          sendResolved: true
